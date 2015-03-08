@@ -41,14 +41,25 @@ unichar const invalidCommand		= '*';
 
 @end
 
+//Represents an oval at 1.0 scale.
+@interface Oval: NSObject
+
+@property (nonatomic) CGRect rect;
+
+@end
+
 @implementation Rectangle
 
 @end
 
+@implementation Oval
+
+@end
+
 @interface Token : NSObject {
-	@private
-	unichar			command;
-	NSMutableArray  *values;
+@private
+    unichar			command;
+    NSMutableArray  *values;
 }
 
 - (id)initWithCommand:(unichar)commandChar;
@@ -62,25 +73,25 @@ unichar const invalidCommand		= '*';
 @implementation Token
 
 - (id)initWithCommand:(unichar)commandChar {
-	self = [self init];
+    self = [self init];
     if (self) {
-		command = commandChar;
-		values = [[NSMutableArray alloc] initWithCapacity:maxParameters];
-	}
-	return self;
+        command = commandChar;
+        values = [[NSMutableArray alloc] initWithCapacity:maxParameters];
+    }
+    return self;
 }
 
 - (void)addValue:(CGFloat)value {
-	[values addObject:[NSNumber numberWithDouble:value]];
+    [values addObject:[NSNumber numberWithDouble:value]];
 }
 
 - (CGFloat)parameter:(NSInteger)index {
-	return [[values objectAtIndex:index] doubleValue];
+    return [[values objectAtIndex:index] doubleValue];
 }
 
 - (NSInteger)valence
 {
-	return [values count];
+    return [values count];
 }
 
 
@@ -90,13 +101,13 @@ unichar const invalidCommand		= '*';
 
 @interface PocketSVG () {
 @private
-	float			pathScale;
-	UIBezierPath    *bezier;
-	CGPoint			lastPoint;
-	CGPoint			lastControlPoint;
-	BOOL			validLastControlPoint;
-	NSCharacterSet  *separatorSet;
-	NSCharacterSet  *commandSet;
+    float			pathScale;
+    UIBezierPath    *bezier;
+    CGPoint			lastPoint;
+    CGPoint			lastControlPoint;
+    BOOL			validLastControlPoint;
+    NSCharacterSet  *separatorSet;
+    NSCharacterSet  *commandSet;
     
     NSMutableArray  *tokens;
 }
@@ -113,6 +124,9 @@ unichar const invalidCommand		= '*';
 
 //Bezier paths of rectangles, deduced from an SVG string
 @property (nonatomic, strong) NSMutableArray *rectangles;
+
+//Bezier paths of ovals, deduced from an SVG string
+@property (nonatomic, strong) NSMutableArray *ovals;
 @end
 
 
@@ -169,6 +183,7 @@ unichar const invalidCommand		= '*';
     self.scale = 1.0;
     self.borderPadding = 0;
     self.rectangles = [NSMutableArray new];
+    self.ovals = [NSMutableArray new];
 }
 
 - (void)setupWithSVGString:(NSString *)svgString {
@@ -203,6 +218,16 @@ unichar const invalidCommand		= '*';
         rectangle.cornerRadius = radius;
         [self.rectangles addObject:rectangle];
     }
+    
+    for (HTMLNode *circleNode in [docNode findChildTags:@"circle"]) {
+        float x = [circleNode getAttributeNamed:@"x"].floatValue;
+        float y = [circleNode getAttributeNamed:@"y"].floatValue;
+        float radius = [circleNode getAttributeNamed:@"r"].floatValue;
+        
+        Oval *oval = [Oval new];
+        oval.rect = CGRectMake(x, y, radius * 2, radius * 2);
+        [self.ovals addObject:oval];
+    }
 }
 
 - (UIBezierPath *)bezierPath {
@@ -230,6 +255,16 @@ unichar const invalidCommand		= '*';
         [bezierPath appendPath:rectangleBezierPath];
     }
     
+    for (Oval *oval in self.ovals) {
+        CGRect scaledRect = CGRectMake((oval.rect.origin.x * scale) + (borderPadding / 2),
+                                       (oval.rect.origin.y * scale) + (borderPadding / 2),
+                                       (oval.rect.size.width * scale) + (borderPadding / 2),
+                                       (oval.rect.size.height * scale) + (borderPadding / 2));
+        
+        UIBezierPath *ovalBezierPath = [UIBezierPath bezierPathWithOvalInRect:scaledRect];
+        [bezierPath appendPath:ovalBezierPath];
+    }
+    
     return bezierPath;
 }
 
@@ -254,7 +289,7 @@ unichar const invalidCommand		= '*';
 + (NSString *)svgStringAtURL:(NSURL *)svgFileURL
 {
     NSError *error = nil;
-
+    
     NSString *svgString = [NSString stringWithContentsOfURL:svgFileURL
                                                    encoding:NSStringEncodingConversionExternalRepresentation
                                                       error:&error];
@@ -268,7 +303,7 @@ unichar const invalidCommand		= '*';
 
 /********
  Returns the content of the SVG's d attribute as an NSString
-*/
+ */
 + (NSString *)parseSVGNamed:(NSString *)nameOfSVG{
     
     NSString *pathOfSVGFile = [[NSBundle mainBundle] pathForResource:nameOfSVG ofType:@"svg"];
@@ -286,7 +321,7 @@ unichar const invalidCommand		= '*';
         NSLog(@"%@", error);
         return nil;
     }
-
+    
     return [[self class] dStringFromRawSVGString:mySVGString];
 }
 
@@ -322,7 +357,7 @@ unichar const invalidCommand		= '*';
         
         dString = [dStringWithPossibleWhiteSpace componentsJoinedByString:@""];
         
-//        NSLog(@"*** PocketSVG: Path data is: %@", dString);
+        //        NSLog(@"*** PocketSVG: Path data is: %@", dString);
         
         if (finalString.length > 0) {
             finalString = [finalString stringByAppendingString:@", "];
@@ -338,253 +373,253 @@ unichar const invalidCommand		= '*';
 
 /*
 	Tokenise pseudocode, used in parsePath below
-
+ 
 	start a token
 	eat a character
 	while more characters to eat
-		add character to token
-		while in a token and more characters to eat
-			eat character
-			add character to token
-		add completed token to store
-		start a new token
+ add character to token
+ while in a token and more characters to eat
+ eat character
+ add character to token
+ add completed token to store
+ start a new token
 	throw away empty token
-*/
+ */
 
 - (NSMutableArray *)parsePath:(NSString *)attr scale:(float)scale borderPadding:(float)borderPadding
 {
-	NSMutableArray *stringTokens = [NSMutableArray arrayWithCapacity: maxPathComplexity];
-	
-	NSInteger index = 0;
-	while (index < [attr length]) {
+    NSMutableArray *stringTokens = [NSMutableArray arrayWithCapacity: maxPathComplexity];
+    
+    NSInteger index = 0;
+    while (index < [attr length]) {
         unichar	charAtIndex = [attr characterAtIndex:index];
         //Jagie:Skip whitespace
         if (charAtIndex == 32) {
             index ++;
             continue;
         }
-		NSMutableString *stringToken = [[NSMutableString alloc] initWithCapacity:maxTokenLength];
-		[stringToken setString:@""];
-		
-		if (charAtIndex != ',') {
-			[stringToken appendString:[NSString stringWithFormat:@"%c", charAtIndex]];
-		}
-		if (![commandSet characterIsMember:charAtIndex] && charAtIndex != ',') {
-			while ( (++index < [attr length]) && ![separatorSet characterIsMember:(charAtIndex = [attr characterAtIndex:index])] ) {
-				[stringToken appendString:[NSString stringWithFormat:@"%c", charAtIndex]];
-			}
-		}
-		else {
-			index++;
-		}
+        NSMutableString *stringToken = [[NSMutableString alloc] initWithCapacity:maxTokenLength];
+        [stringToken setString:@""];
         
-		if ([stringToken length]) {
-			[stringTokens addObject:stringToken];
-		}
-	}
-	
-	if ([stringTokens count] == 0) {
-		NSLog(@"*** PocketSVG Error: Path string is empty of tokens");
-		return nil;
-	}
-	
-	// turn the stringTokens array into Tokens, checking validity of tokens as we go
-	tokens = [[NSMutableArray alloc] initWithCapacity:maxPathComplexity];
-	index = 0;
-	NSString *stringToken = [stringTokens objectAtIndex:index];
-	unichar command = [stringToken characterAtIndex:0];
-	while (index < [stringTokens count]) {
-		if (![commandSet characterIsMember:command]) {
-			NSLog(@"*** PocketSVG Error: Path string parse error: found float where expecting command at token %ld in path %s.",
-					(long)index, [attr cStringUsingEncoding:NSUTF8StringEncoding]);
-			return nil;
-		}
-		Token *token = [[Token alloc] initWithCommand:command];
-		
-		// There can be any number of floats after a command. Suck them in until the next command.
-		while ((++index < [stringTokens count]) && ![commandSet characterIsMember:
-				(command = [(stringToken = [stringTokens objectAtIndex:index]) characterAtIndex:0])]) {
-			
-			NSScanner *floatScanner = [NSScanner scannerWithString:stringToken];
-			float value;
-			if (![floatScanner scanFloat:&value]) {
-				NSLog(@"*** PocketSVG Error: Path string parse error: expected float or command at token %ld (but found %s) in path %s.",
-					  (long)index, [stringToken cStringUsingEncoding:NSUTF8StringEncoding], [attr cStringUsingEncoding:NSUTF8StringEncoding]);
-				return nil;
-			}
+        if (charAtIndex != ',') {
+            [stringToken appendString:[NSString stringWithFormat:@"%c", charAtIndex]];
+        }
+        if (![commandSet characterIsMember:charAtIndex] && charAtIndex != ',') {
+            while ( (++index < [attr length]) && ![separatorSet characterIsMember:(charAtIndex = [attr characterAtIndex:index])] ) {
+                [stringToken appendString:[NSString stringWithFormat:@"%c", charAtIndex]];
+            }
+        }
+        else {
+            index++;
+        }
+        
+        if ([stringToken length]) {
+            [stringTokens addObject:stringToken];
+        }
+    }
+    
+    if ([stringTokens count] == 0) {
+        NSLog(@"*** PocketSVG Error: Path string is empty of tokens");
+        return nil;
+    }
+    
+    // turn the stringTokens array into Tokens, checking validity of tokens as we go
+    tokens = [[NSMutableArray alloc] initWithCapacity:maxPathComplexity];
+    index = 0;
+    NSString *stringToken = [stringTokens objectAtIndex:index];
+    unichar command = [stringToken characterAtIndex:0];
+    while (index < [stringTokens count]) {
+        if (![commandSet characterIsMember:command]) {
+            NSLog(@"*** PocketSVG Error: Path string parse error: found float where expecting command at token %ld in path %s.",
+                  (long)index, [attr cStringUsingEncoding:NSUTF8StringEncoding]);
+            return nil;
+        }
+        Token *token = [[Token alloc] initWithCommand:command];
+        
+        // There can be any number of floats after a command. Suck them in until the next command.
+        while ((++index < [stringTokens count]) && ![commandSet characterIsMember:
+                                                     (command = [(stringToken = [stringTokens objectAtIndex:index]) characterAtIndex:0])]) {
             
-			// Maintain scale.
+            NSScanner *floatScanner = [NSScanner scannerWithString:stringToken];
+            float value;
+            if (![floatScanner scanFloat:&value]) {
+                NSLog(@"*** PocketSVG Error: Path string parse error: expected float or command at token %ld (but found %s) in path %s.",
+                      (long)index, [stringToken cStringUsingEncoding:NSUTF8StringEncoding], [attr cStringUsingEncoding:NSUTF8StringEncoding]);
+                return nil;
+            }
+            
+            // Maintain scale.
             value = value * scale;
             
             value = value + borderPadding;
             
-			pathScale = (abs(value) > pathScale) ? abs(value) : pathScale;
-			[token addValue:value];
-		}
-		
-		// now we've reached a command or the end of the stringTokens array
-		[tokens	addObject:token];
-	}
-	//[stringTokens release];
-	return tokens;
+            pathScale = (abs(value) > pathScale) ? abs(value) : pathScale;
+            [token addValue:value];
+        }
+        
+        // now we've reached a command or the end of the stringTokens array
+        [tokens	addObject:token];
+    }
+    //[stringTokens release];
+    return tokens;
 }
 
 - (UIBezierPath *)generateBezier:(NSArray *)inTokens
 {
-	bezier = [[UIBezierPath alloc] init];
-
-	[self reset];
-	for (Token *thisToken in inTokens) {
-		unichar command = [thisToken command];
-		switch (command) {
-			case 'M':
-			case 'm':
-				[self appendSVGMCommand:thisToken];
-				break;
-			case 'L':
-			case 'l':
-			case 'H':
-			case 'h':
-			case 'V':
-			case 'v':
-				[self appendSVGLCommand:thisToken];
-				break;
-			case 'C':
-			case 'c':
-				[self appendSVGCCommand:thisToken];
-				break;
-			case 'S':
-			case 's':
-				[self appendSVGSCommand:thisToken];
-				break;
-			case 'Z':
-			case 'z':
-				[bezier closePath];
-				break;
-			default:
-				NSLog(@"*** PocketSVG Error: Cannot process command : '%c'", command);
-				break;
-		}
-	}
-	return bezier;
+    bezier = [[UIBezierPath alloc] init];
+    
+    [self reset];
+    for (Token *thisToken in inTokens) {
+        unichar command = [thisToken command];
+        switch (command) {
+            case 'M':
+            case 'm':
+                [self appendSVGMCommand:thisToken];
+                break;
+            case 'L':
+            case 'l':
+            case 'H':
+            case 'h':
+            case 'V':
+            case 'v':
+                [self appendSVGLCommand:thisToken];
+                break;
+            case 'C':
+            case 'c':
+                [self appendSVGCCommand:thisToken];
+                break;
+            case 'S':
+            case 's':
+                [self appendSVGSCommand:thisToken];
+                break;
+            case 'Z':
+            case 'z':
+                [bezier closePath];
+                break;
+            default:
+                NSLog(@"*** PocketSVG Error: Cannot process command : '%c'", command);
+                break;
+        }
+    }
+    return bezier;
 }
 
 - (void)reset
 {
-	lastPoint = CGPointMake(0, 0);
-	validLastControlPoint = NO;
+    lastPoint = CGPointMake(0, 0);
+    validLastControlPoint = NO;
 }
 
 - (void)appendSVGMCommand:(Token *)token
 {
-	validLastControlPoint = NO;
-	NSInteger index = 0;
-	BOOL first = YES;
-	while (index < [token valence]) {
-		CGFloat x = [token parameter:index] + ([token command] == 'm' ? lastPoint.x : 0);
-		if (++index == [token valence]) {
-			NSLog(@"*** PocketSVG Error: Invalid parameter count in M style token");
-			return;
-		}
-		CGFloat y = [token parameter:index] + ([token command] == 'm' ? lastPoint.y : 0);
-		lastPoint = CGPointMake(x, y);
-		if (first) {
-			[bezier moveToPoint:lastPoint];
-			first = NO;
-		}
-		else {
-			[bezier addLineToPoint:lastPoint];
-		}
-		index++;
-	}
+    validLastControlPoint = NO;
+    NSInteger index = 0;
+    BOOL first = YES;
+    while (index < [token valence]) {
+        CGFloat x = [token parameter:index] + ([token command] == 'm' ? lastPoint.x : 0);
+        if (++index == [token valence]) {
+            NSLog(@"*** PocketSVG Error: Invalid parameter count in M style token");
+            return;
+        }
+        CGFloat y = [token parameter:index] + ([token command] == 'm' ? lastPoint.y : 0);
+        lastPoint = CGPointMake(x, y);
+        if (first) {
+            [bezier moveToPoint:lastPoint];
+            first = NO;
+        }
+        else {
+            [bezier addLineToPoint:lastPoint];
+        }
+        index++;
+    }
 }
 
 - (void)appendSVGLCommand:(Token *)token
 {
-	validLastControlPoint = NO;
-	NSInteger index = 0;
-	while (index < [token valence]) {
-		CGFloat x = 0;
-		CGFloat y = 0;
-		switch ( [token command] ) {
-			case 'l':
-				x = lastPoint.x;
-				y = lastPoint.y;
-			case 'L':
-				x += [token parameter:index];
-				if (++index == [token valence]) {
-					NSLog(@"*** PocketSVG Error: Invalid parameter count in L style token");
-					return;
-				}
-				y += [token parameter:index];
-				break;
-			case 'h' :
-				x = lastPoint.x;				
-			case 'H' :
-				x += [token parameter:index];
-				y = lastPoint.y;
-				break;
-			case 'v' :
-				y = lastPoint.y;
-			case 'V' :
-				y += [token parameter:index];
-				x = lastPoint.x;
-				break;
-			default:
-				NSLog(@"*** PocketSVG Error: Unrecognised L style command.");
-				return;
-		}
-		lastPoint = CGPointMake(x, y);
-		[bezier addLineToPoint:lastPoint];
-		index++;
-	}
+    validLastControlPoint = NO;
+    NSInteger index = 0;
+    while (index < [token valence]) {
+        CGFloat x = 0;
+        CGFloat y = 0;
+        switch ( [token command] ) {
+            case 'l':
+                x = lastPoint.x;
+                y = lastPoint.y;
+            case 'L':
+                x += [token parameter:index];
+                if (++index == [token valence]) {
+                    NSLog(@"*** PocketSVG Error: Invalid parameter count in L style token");
+                    return;
+                }
+                y += [token parameter:index];
+                break;
+            case 'h' :
+                x = lastPoint.x;
+            case 'H' :
+                x += [token parameter:index];
+                y = lastPoint.y;
+                break;
+            case 'v' :
+                y = lastPoint.y;
+            case 'V' :
+                y += [token parameter:index];
+                x = lastPoint.x;
+                break;
+            default:
+                NSLog(@"*** PocketSVG Error: Unrecognised L style command.");
+                return;
+        }
+        lastPoint = CGPointMake(x, y);
+        [bezier addLineToPoint:lastPoint];
+        index++;
+    }
 }
 
 - (void)appendSVGCCommand:(Token *)token
 {
-	NSInteger index = 0;
-	while ((index + 5) < [token valence]) {  // we must have 6 floats here (x1, y1, x2, y2, x, y).
-		CGFloat x1 = [token parameter:index++] + ([token command] == 'c' ? lastPoint.x : 0);
-		CGFloat y1 = [token parameter:index++] + ([token command] == 'c' ? lastPoint.y : 0);
-		CGFloat x2 = [token parameter:index++] + ([token command] == 'c' ? lastPoint.x : 0);
-		CGFloat y2 = [token parameter:index++] + ([token command] == 'c' ? lastPoint.y : 0);
-		CGFloat x  = [token parameter:index++] + ([token command] == 'c' ? lastPoint.x : 0);
-		CGFloat y  = [token parameter:index++] + ([token command] == 'c' ? lastPoint.y : 0);
-		lastPoint = CGPointMake(x, y);
-		[bezier addCurveToPoint:lastPoint 
-				  controlPoint1:CGPointMake(x1,y1) 
-				  controlPoint2:CGPointMake(x2, y2)];
+    NSInteger index = 0;
+    while ((index + 5) < [token valence]) {  // we must have 6 floats here (x1, y1, x2, y2, x, y).
+        CGFloat x1 = [token parameter:index++] + ([token command] == 'c' ? lastPoint.x : 0);
+        CGFloat y1 = [token parameter:index++] + ([token command] == 'c' ? lastPoint.y : 0);
+        CGFloat x2 = [token parameter:index++] + ([token command] == 'c' ? lastPoint.x : 0);
+        CGFloat y2 = [token parameter:index++] + ([token command] == 'c' ? lastPoint.y : 0);
+        CGFloat x  = [token parameter:index++] + ([token command] == 'c' ? lastPoint.x : 0);
+        CGFloat y  = [token parameter:index++] + ([token command] == 'c' ? lastPoint.y : 0);
+        lastPoint = CGPointMake(x, y);
+        [bezier addCurveToPoint:lastPoint
+                  controlPoint1:CGPointMake(x1,y1)
+                  controlPoint2:CGPointMake(x2, y2)];
         lastControlPoint = CGPointMake(x2, y2);
-		validLastControlPoint = YES;
-	}
-	if (index == 0) {
-		NSLog(@"*** PocketSVG Error: Insufficient parameters for C command");
-	}
+        validLastControlPoint = YES;
+    }
+    if (index == 0) {
+        NSLog(@"*** PocketSVG Error: Insufficient parameters for C command");
+    }
 }
 
 - (void)appendSVGSCommand:(Token *)token
 {
-	if (!validLastControlPoint) {
-		NSLog(@"*** PocketSVG Error: Invalid last control point in S command");
-	}
-	NSInteger index = 0;
-	while ((index + 3) < [token valence]) {  // we must have 4 floats here (x2, y2, x, y).
-		CGFloat x1 = lastPoint.x + (lastPoint.x - lastControlPoint.x); // + ([token command] == 's' ? lastPoint.x : 0);
-		CGFloat y1 = lastPoint.y + (lastPoint.y - lastControlPoint.y); // + ([token command] == 's' ? lastPoint.y : 0);
-		CGFloat x2 = [token parameter:index++] + ([token command] == 's' ? lastPoint.x : 0);
-		CGFloat y2 = [token parameter:index++] + ([token command] == 's' ? lastPoint.y : 0);
-		CGFloat x  = [token parameter:index++] + ([token command] == 's' ? lastPoint.x : 0);
-		CGFloat y  = [token parameter:index++] + ([token command] == 's' ? lastPoint.y : 0);
-		lastPoint = CGPointMake(x, y);
-		[bezier addCurveToPoint:lastPoint 
-				  controlPoint1:CGPointMake(x1,y1)
-				  controlPoint2:CGPointMake(x2, y2)];
-		lastControlPoint = CGPointMake(x2, y2);
-		validLastControlPoint = YES;
-	}
-	if (index == 0) {
-		NSLog(@"*** PocketSVG Error: Insufficient parameters for S command");
-	}
+    if (!validLastControlPoint) {
+        NSLog(@"*** PocketSVG Error: Invalid last control point in S command");
+    }
+    NSInteger index = 0;
+    while ((index + 3) < [token valence]) {  // we must have 4 floats here (x2, y2, x, y).
+        CGFloat x1 = lastPoint.x + (lastPoint.x - lastControlPoint.x); // + ([token command] == 's' ? lastPoint.x : 0);
+        CGFloat y1 = lastPoint.y + (lastPoint.y - lastControlPoint.y); // + ([token command] == 's' ? lastPoint.y : 0);
+        CGFloat x2 = [token parameter:index++] + ([token command] == 's' ? lastPoint.x : 0);
+        CGFloat y2 = [token parameter:index++] + ([token command] == 's' ? lastPoint.y : 0);
+        CGFloat x  = [token parameter:index++] + ([token command] == 's' ? lastPoint.x : 0);
+        CGFloat y  = [token parameter:index++] + ([token command] == 's' ? lastPoint.y : 0);
+        lastPoint = CGPointMake(x, y);
+        [bezier addCurveToPoint:lastPoint 
+                  controlPoint1:CGPointMake(x1,y1)
+                  controlPoint2:CGPointMake(x2, y2)];
+        lastControlPoint = CGPointMake(x2, y2);
+        validLastControlPoint = YES;
+    }
+    if (index == 0) {
+        NSLog(@"*** PocketSVG Error: Insufficient parameters for S command");
+    }
 }
 
 @end
