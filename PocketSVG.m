@@ -177,6 +177,12 @@ unichar const invalidCommand		= '*';
     HTMLParser *parser = [[HTMLParser alloc] initWithString:svgString error:nil];
     HTMLNode *docNode = [parser doc];
     
+    HTMLNode *svgNode = [docNode findChildTag:@"svg"];
+    float width = [svgNode getAttributeNamed:@"width"].floatValue;
+    float height = [svgNode getAttributeNamed:@"height"].floatValue;
+    
+    self.size = CGSizeMake(width, height);
+    
     for (HTMLNode *rectNode in [docNode findChildTags:@"rect"]) {
         float x = [rectNode getAttributeNamed:@"x"].floatValue;
         float y = [rectNode getAttributeNamed:@"y"].floatValue;
@@ -229,8 +235,15 @@ unichar const invalidCommand		= '*';
 
 - (double)scaleToFitSize:(CGSize)size {
     CGSize realSize = CGSizeMake(size.width - (self.borderPadding * 2), size.height - (self.borderPadding * 2));
-    CGPathRef pathDefaultScale = [self bezierPathWithScale:1.0 borderPadding:self.borderPadding].CGPath;
-    CGSize defaultScaleSize = CGPathGetBoundingBox(pathDefaultScale).size;
+    
+    CGSize defaultScaleSize;
+    
+    if (self.size.width == 0 && self.size.height == 0) {
+        CGPathRef pathDefaultScale = [self bezierPathWithScale:1.0 borderPadding:self.borderPadding].CGPath;
+        defaultScaleSize = CGPathGetBoundingBox(pathDefaultScale).size;
+    } else {
+        defaultScaleSize = self.size;
+    }
     
     float widthDifference = realSize.width / defaultScaleSize.width;
     float heightDifference = realSize.height / defaultScaleSize.height;

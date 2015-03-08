@@ -34,6 +34,10 @@
 @property (nonatomic) double scale;
 @property (nonatomic) double borderPadding;
 
+//Generated upon initialization, unless initializing with d attribute.
+//If missing then can be worked out upon SVG generation.
+@property (nonatomic) CGSize size;
+
 - (UIBezierPath *)bezierPath;
 
 //Gives scale that fits the svg within a size, taking border padding into account.
