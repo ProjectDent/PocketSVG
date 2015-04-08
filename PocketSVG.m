@@ -220,12 +220,12 @@ unichar const invalidCommand		= '*';
     }
     
     for (HTMLNode *circleNode in [docNode findChildTags:@"circle"]) {
-        float x = [circleNode getAttributeNamed:@"x"].floatValue;
-        float y = [circleNode getAttributeNamed:@"y"].floatValue;
+        float cx = [circleNode getAttributeNamed:@"cx"].floatValue;
+        float cy = [circleNode getAttributeNamed:@"cy"].floatValue;
         float radius = [circleNode getAttributeNamed:@"r"].floatValue;
         
         Oval *oval = [Oval new];
-        oval.rect = CGRectMake(x, y, radius * 2, radius * 2);
+        oval.rect = CGRectMake(cx - radius, cy - radius, radius * 2, radius * 2);
         [self.ovals addObject:oval];
     }
 }
